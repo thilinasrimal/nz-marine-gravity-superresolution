@@ -1,0 +1,85 @@
+project:
+  name: "NZ_Marine_Gravity_SuperResolution"
+  version: "1.0"
+  seed: 42
+
+data:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  splits_dir: "data/splits"
+  
+  sources:
+    sio_gravity:
+      path: "grav_33.1.nc"
+      resolution_arcmin: 1
+      description: "SIO V33.1 - Primary gravity input (superior for mid-latitude open ocean)"
+    
+    gebco_2026:
+      path: "gebco_2026.nc"
+      resolution_arcsec: 15
+      description: "GEBCO 2026 - Latest global bathymetry release"
+    
+    nz_bathy:
+      path: "nzbathy_2016.tif"
+      resolution_arcsec: 3
+      description: "NZ coastal high-resolution bathymetry - Novel second bathymetric channel"
+    
+    egm2008:
+      path: "EGM2008.tif"
+      resolution_deg: 0.0833
+      description: "EGM2008 - Long-wavelength reference field for RCR framework"
+
+  target_resolution_arcmin: 0.25  # 4x super-resolution target
+  study_bounds: [165, -48, 178, -34]  # NZ EEZ [lon_min, lat_min, lon_max, lat_max]
+
+preprocessing:
+  common_grid_resolution: 0.00208333  # ~15 arc-seconds
+  interpolation_method: "bilinear"
+  outlier_threshold_std: 3.0
+  
+  remove_compute_restore:
+    use_rcr: true
+    reference_field: "EGM2008"
+    max_degree: 2159
+
+  train_val_test_split:
+    train: 0.70
+    val: 0.15
+    test: 0.15
+    spatial_block_size_deg: 2.0
+
+model:
+  architecture: "CNN_SR"  # or "UNet_SR"
+  
+  cnn_params:
+    n_residual_blocks: 16
+    n_features: 64
+    upscale_factor: 4
+    
+  unet_params:
+    initial_filters: 64
+    depth: 4
+    n_input_channels: 4  # SIO gravity + GEBCO + NZ bathymetry + EGM2008 residual
+    n_output_channels: 1
+    
+training:
+  batch_size: 32
+  n_epochs: 200
+  learning_rate: 0.001
+  weight_decay: 1e-5
+  
+  scheduler:
+    type: "cosine_annealing"
+    T_max: 200
+    
+  early_stopping:
+    patience: 20
+    min_delta: 0.0001
+    
+  transfer_learning:
+    use_pretraining: true
+    pretraining_data: "ncei_global"
+    
+evaluation:
+  metrics: ["RMSE", "MAE", "R2", "Correlation"]
+  coastal_zones: [[0, 20], [20, 50], [50, 999]]
